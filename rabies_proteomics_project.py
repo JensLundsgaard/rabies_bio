@@ -16,8 +16,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Tuple
 from dataclasses import dataclass
-import logging
-
+import itertools
 # Bioinformatics libraries
 from Bio import SeqIO, AlignIO
 from Bio.Seq import Seq
@@ -30,13 +29,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
+from propy import PyPro
 
 @dataclass
 class ProteinProperty:
@@ -58,8 +52,6 @@ class RabiesVirusAnalyzer:
     RABIES_PROTEINS = {
         'NP': 'Nucleoprotein',
         'P': 'Phosphoprotein',
-        'M': 'Matrix protein',
-        'G': 'Glycoprotein',
         'L': 'RNA-dependent RNA polymerase',
     }
     
@@ -67,8 +59,6 @@ class RabiesVirusAnalyzer:
     PROTEIN_ACCESSIONS = {
         'NP': 'NP_056821.1',  # Nucleoprotein
         'P': 'NP_056822.1',   # Phosphoprotein
-        'M': 'NP_056823.1',   # Matrix protein
-        'G': 'NP_056824.1',   # Glycoprotein
         'L': 'NP_056825.1',   # RNA polymerase
     }
     
@@ -85,7 +75,7 @@ class RabiesVirusAnalyzer:
         The Entrez API allows free academic access without a key
         for moderate request volumes.
         """
-        logger.info("Fetching rabies virus protein sequences from NCBI...")
+        print("Fetching rabies virus protein sequences from NCBI...")
         
         base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
         
@@ -108,20 +98,20 @@ class RabiesVirusAnalyzer:
                 )
                 self.sequences[protein_code] = fasta_io
                 
-                logger.info(
+                print(
                     f"✓ Fetched {protein_code} "
                     f"({self.RABIES_PROTEINS[protein_code]}) - "
                     f"{len(fasta_io.seq)} aa"
                 )
                 
             except Exception as e:
-                logger.error(f"Failed to fetch {protein_code}: {e}")
-                logger.info(f"Using example sequence for {protein_code}")
+                print(f"Failed to fetch {protein_code}: {e}")
+                print(f"Using example sequence for {protein_code}")
                 # Continue with example sequences if fetch fails
     
     def create_example_sequences(self) -> None:
         """Create example protein sequences for demonstration"""
-        logger.info("Creating example rabies virus protein sequences...")
+        print("Creating example rabies virus protein sequences...")
         
         # These are real (shortened) sequences for demonstration
         example_seqs = {
@@ -147,14 +137,14 @@ class RabiesVirusAnalyzer:
         Returns:
             DataFrame with protein properties
         """
-        logger.info("Analyzing biophysical properties...")
+        print("Analyzing biophysical properties...")
         
         for protein_code, record in self.sequences.items():
             seq_str = str(record.seq)
             
             # Skip if sequence is too short
             if len(seq_str) < 5:
-                logger.warning(f"Sequence {protein_code} too short, skipping")
+                print(f"Sequence {protein_code} too short, skipping")
                 continue
             
             try:
@@ -173,14 +163,14 @@ class RabiesVirusAnalyzer:
                 
                 self.properties.append(prop)
                 
-                logger.info(
+                print(
                     f"✓ {protein_code}: MW={prop.molecular_weight:.1f} Da, "
                     f"pI={prop.isoelectric_point:.2f}, "
                     f"II={prop.instability_index:.1f}"
                 )
                 
             except Exception as e:
-                logger.error(f"Error analyzing {protein_code}: {e}")
+                print(f"Error analyzing {protein_code}: {e}")
         
         # Convert to DataFrame
         df = pd.DataFrame([
@@ -200,13 +190,13 @@ class RabiesVirusAnalyzer:
         # Save to CSV
         output_path = self.output_dir / 'protein_properties.csv'
         df.to_csv(output_path, index=False)
-        logger.info(f"Protein properties saved to {output_path}")
+        print(f"Protein properties saved to {output_path}")
         
         return df
     
     def analyze_amino_acid_composition(self) -> pd.DataFrame:
         """Calculate amino acid composition for each protein"""
-        logger.info("Analyzing amino acid composition...")
+        print("Analyzing amino acid composition...")
         
         aa_data = []
         
@@ -228,7 +218,7 @@ class RabiesVirusAnalyzer:
         # Save to CSV
         output_path = self.output_dir / 'amino_acid_composition.csv'
         df.to_csv(output_path, index=False)
-        logger.info(f"Amino acid composition saved to {output_path}")
+        print(f"Amino acid composition saved to {output_path}")
         
         return df
     
@@ -237,10 +227,10 @@ class RabiesVirusAnalyzer:
         Perform multiple sequence alignment on available proteins
         Uses MUSCLE if available, otherwise shows pairwise comparisons
         """
-        logger.info("Performing sequence alignment...")
+        print("Performing sequence alignment...")
         
         if len(self.sequences) < 2:
-            logger.warning("Need at least 2 sequences for alignment")
+            print("Need at least 2 sequences for alignment")
             return
         
         # Save sequences to temporary FASTA
@@ -255,15 +245,15 @@ class RabiesVirusAnalyzer:
                 out=str(aligned_path)
             )
             muscle_cline()
-            logger.info(f"Alignment saved to {aligned_path}")
+            print(f"Alignment saved to {aligned_path}")
             
         except Exception as e:
-            logger.warning(f"MUSCLE not available: {e}")
-            logger.info("Skipping alignment (install MUSCLE for full functionality)")
+            print(f"MUSCLE not available: {e}")
+            print("Skipping alignment (install MUSCLE for full functionality)")
     
     def calculate_sequence_identity(self) -> pd.DataFrame:
         """Calculate pairwise sequence identity between proteins"""
-        logger.info("Calculating pairwise sequence identity...")
+        print("Calculating pairwise sequence identity...")
         
         from Bio.Align import PairwiseAligner
         
@@ -287,11 +277,11 @@ class RabiesVirusAnalyzer:
                     seq2 = str(self.sequences[prot2].seq)
                     
                     alignments = aligner.align(seq1, seq2)
-                    
-                    if alignments:
-                        best = alignments[0]
+                    limited_alignments = list(itertools.islice(alignments, 500))
+                    if limited_alignments:
+                        best = limited_alignments[0]
                         identity = (
-                            best.count('/') / 
+                            best.counts().identities / 
                             min(len(seq1), len(seq2))
                         )
                         identity_matrix.loc[prot1, prot2] = identity
@@ -300,13 +290,13 @@ class RabiesVirusAnalyzer:
         # Save to CSV
         output_path = self.output_dir / 'sequence_identity.csv'
         identity_matrix.to_csv(output_path)
-        logger.info(f"Sequence identity matrix saved to {output_path}")
+        print(f"Sequence identity matrix saved to {output_path}")
         
         return identity_matrix
     
     def visualize_properties(self, properties_df: pd.DataFrame) -> None:
         """Create visualizations of protein properties"""
-        logger.info("Creating visualizations...")
+        print("Creating visualizations...")
         
         # Set style
         sns.set_style("whitegrid")
@@ -410,12 +400,12 @@ class RabiesVirusAnalyzer:
         
         output_path = self.output_dir / 'protein_analysis_plots.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        logger.info(f"Plots saved to {output_path}")
+        print(f"Plots saved to {output_path}")
         plt.close()
     
     def visualize_amino_acid_composition(self, aa_df: pd.DataFrame) -> None:
         """Visualize amino acid composition"""
-        logger.info("Creating amino acid composition heatmap...")
+        print("Creating amino acid composition heatmap...")
         
         # Set protein as index
         aa_df = aa_df.set_index('Protein')
@@ -436,12 +426,12 @@ class RabiesVirusAnalyzer:
         
         output_path = self.output_dir / 'amino_acid_composition_heatmap.png'
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        logger.info(f"Heatmap saved to {output_path}")
+        print(f"Heatmap saved to {output_path}")
         plt.close()
     
     def generate_report(self, properties_df: pd.DataFrame) -> None:
         """Generate a summary report"""
-        logger.info("Generating summary report...")
+        print("Generating summary report...")
         
         report = []
         report.append("=" * 70)
@@ -499,17 +489,17 @@ class RabiesVirusAnalyzer:
         with open(output_path, 'w') as f:
             f.write(report_text)
         
-        logger.info(f"Report saved to {output_path}")
+        print(f"Report saved to {output_path}")
         print("\n" + report_text)
     
     def run_complete_analysis(self) -> None:
         """Run the complete analysis pipeline"""
-        logger.info("Starting rabies virus proteomics analysis pipeline...")
+        print("Starting rabies virus proteomics analysis pipeline...")
         
         # Fetch sequences (or use examples if fetch fails)
         self.fetch_sequences()
         if not self.sequences:
-            logger.info("Using example sequences for demonstration")
+            print("Using example sequences for demonstration")
             self.create_example_sequences()
         
         # Analyses
@@ -524,9 +514,90 @@ class RabiesVirusAnalyzer:
         # Report
         self.generate_report(properties_df)
         
-        logger.info("Analysis complete! Check 'rabies_output' directory for results.")
+        print("Analysis complete! Check 'rabies_output' directory for results.")
 
 
+"""
+
+### 1.1 Secondary Structure Prediction
+
+**Concept**: Predict if amino acids form alpha-helices, beta-sheets, or loops
+
+**Tools**: Use the `PSIPRED` algorithm or simpler `Chou-Fasman` prediction
+
+**Implementation Difficulty**: Intermediate
+
+```python
+# Install: pip install propy
+from propy import PyPro
+
+def predict_secondary_structure(sequence):
+    # Predict secondary structure using Chou-Fasman
+    # Returns % helix, % sheet, % coil
+    pass
+```
+
+**What you'll learn**:
+- Dihedral angles and Ramachandran plots
+- How local amino acid properties determine structure
+- Pattern recognition in sequences
+
+**Visualization opportunity**: Stacked bar charts or circular plots showing structure composition
+
+---
+
+### 1.2 Transmembrane Domain Prediction
+
+**Concept**: Predict which parts of the protein cross through membranes
+
+**Why relevant for rabies**: The G protein has transmembrane domains
+
+**Tools**: `TMHMM`, `Phobius`, or simple hydropathy analysis
+
+```python
+def find_transmembrane_regions(sequence, window=9):
+    # Use Kyte-Doolittle hydropathy scale to identify
+    # transmembrane helices (hydrophobic stretches)
+    # Returns list of (start, end) coordinates
+    pass
+```
+
+**What you'll learn**:
+- Hydropathy scales and their biochemical basis
+- Membrane protein topology
+- Signal peptide recognition
+
+**Visualization opportunity**: Linear protein diagrams with colored domains
+
+---
+
+### 1.3 Disorder Prediction
+
+**Concept**: Identify which regions are "floppy" (intrinsically disordered)
+
+**Why it matters**: Disordered regions are often functionally important but not visible in crystal structures
+
+**Tools**: `IUPred`, `PONDR`, or simple approaches using charge/hydropathy ratio
+
+```python
+from biopython_extensions import disorder
+
+def predict_disorder(sequence):
+    
+    #Regions high in charged/polar and low in hydrophobic
+    #residues are often disordered
+    return disorder.iupred_like_score(sequence)
+```
+
+**What you'll learn**:
+- Intrinsically disordered proteins (IDPs)
+- Post-translational modification sites
+- Why wet lab structure determination fails for flexible regions
+
+**Visualization opportunity**: Line plots of disorder probability along sequence
+
+---
+"""
 def main():
     """Main entry point"""
     analyzer = RabiesVirusAnalyzer(output_dir='./rabies_output')
@@ -536,5 +607,6 @@ def main():
 if __name__ == '__main__':
     # Temporary fix for StringIO import
     from io import StringIO
+
     main()
 
