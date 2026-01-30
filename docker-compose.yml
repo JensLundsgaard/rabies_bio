@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  rabies-analysis:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rabies-proteomics-analysis
+    volumes:
+      - ./rabies_output:/app/rabies_output
+      - ./visualizations:/app/visualizations
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python rabies_proteomics_project.py
+
+  # Optional: Streamlit dashboard
+  streamlit-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rabies-streamlit
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./rabies_output:/app/rabies_output
+      - ./visualizations:/app/visualizations
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: streamlit run rabies_streamlit_dashboard.py --server.port=8501 --server.address=0.0.0.0
+    depends_on:
+      - rabies-analysis
+
+  # Optional: Dash application
+  dash-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rabies-dash
+    ports:
+      - "8050:8050"
+    volumes:
+      - ./rabies_output:/app/rabies_output
+      - ./visualizations:/app/visualizations
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python rabies_dash_dashboard.py
+    depends_on:
+      - rabies-analysis
